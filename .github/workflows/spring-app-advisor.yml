@@ -1,0 +1,41 @@
+name: Spring App Advisor Workflow
+
+on:
+  schedule:
+    - cron: "0 2 * * 1-5"
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'liberica'
+      - name: Generates Maven Settings
+        uses: 's4u/maven-settings-action@v3.1.0'
+        with:
+          servers: '[{"id": "tanzu-spring-release", "username":  "${{ secrets.BROADCOM_SPRING_USERNAME }}", "password": "${{ secrets.BROADCOM_SPRING_PASSWORD }}"}]'
+          repositories: '[{"id":"tanzu-spring-release", "name":"Spring Enterprise Supported Releases","url":"${{vars.BROADCOM_SPRING_REPOSITORY}}","snapshots":{"enabled":false}}]'
+          pluginRepositories: '[{"id":"tanzu-spring-release", "name":"Spring Enterprise Supported Releases","url":"${{vars.BROADCOM_SPRING_REPOSITORY}}","snapshots":{"enabled":false}}]'
+      - name: Runs Spring Application Advisor
+        continue-on-error: true
+        env:
+          GIT_TOKEN_FOR_PRS: ${{ secrets.GH_PULL_REQUEST_TOKEN }}
+          ARTIFACTORY_TOKEN: ${{ secrets.BROADCOM_SPRING_PASSWORD }}
+          CLI_DOWNLOAD_URL: ${{ vars.SPRING_APP_ADVISOR_DOWNLOAD_URL }}
+        run: |
+          curl -L -H "Authorization: Bearer $ARTIFACTORY_TOKEN"  -o advisor-linux.tar -X GET $CLI_DOWNLOAD_URL
+          tar -xf advisor-linux.tar --strip-components=1 --exclude=./META-INF
+          ./advisor build-config get
+          ./advisor upgrade-plan apply --push --token=$GIT_TOKEN_FOR_PRS
+      - name: Get errors if exist
+        if: always() && hashFiles('.advisor/errors/') != ''
+        run: |
+          cat .advisor/errors/*
