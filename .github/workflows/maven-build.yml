@@ -23,7 +23,6 @@ jobs:
         uses: actions/setup-java@v2
         with:
           java-version: ${{matrix.java}}
-          distribution: 'adopt'
-          cache: maven
+          distribution: 'liberica'
       - name: Build with Maven Wrapper
         run: ./mvnw -B package
