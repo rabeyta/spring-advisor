@@ -1,0 +1,76 @@
+name: Full Upgrade - Spring App Advisor
+on:
+  workflow_dispatch:
+    inputs:
+      java_version:
+        description: 'Java version'
+        required: true
+        default: '17'
+        type: choice
+        options:
+          - 21
+          - 17
+          - 11
+          - 8
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "${{ github.event.inputs.java_version }}"
+          distribution: 'liberica'
+      - name: Generates Maven Settings
+        uses: 's4u/maven-settings-action@v3.1.0'
+        with:
+          servers: '[{"id": "tanzu-spring-release", "username":  "${{ secrets.BROADCOM_SPRING_USERNAME }}", "password": "${{ secrets.BROADCOM_SPRING_PASSWORD }}"}]'
+          repositories: '[{"id":"tanzu-spring-release", "name":"Spring Enterprise Supported Releases","url":"${{vars.BROADCOM_SPRING_REPOSITORY}}","snapshots":{"enabled":false}}]'
+          pluginRepositories: '[{"id":"tanzu-spring-release", "name":"Spring Enterprise Supported Releases","url":"${{vars.BROADCOM_SPRING_REPOSITORY}}","snapshots":{"enabled":false}}]'
+      - name: Runs Spring Application Advisor
+        continue-on-error: true
+        env:
+          GIT_TOKEN_FOR_PRS: ${{ secrets.GH_PULL_REQUEST_TOKEN }}
+          ARTIFACTORY_TOKEN: ${{ secrets.BROADCOM_SPRING_PASSWORD }}
+          CLI_DOWNLOAD_URL: ${{ vars.SPRING_APP_ADVISOR_DOWNLOAD_URL }}
+        run: |
+          # download the cli
+          curl -L -H "Authorization: Bearer $ARTIFACTORY_TOKEN"  -o /tmp/advisor-linux.tar -X GET $CLI_DOWNLOAD_URL
+          tar -xf /tmp/advisor-linux.tar -C /tmp/ --strip-components=1 --exclude=./META-INF
+          # upgrade app until last upgrade
+          while true; do
+              # update the build config (required for upgrade-plan)
+              /tmp/advisor build-config get
+              # lets see if there is something to upgrade
+              output=$(/tmp/advisor upgrade-plan get)
+              if [[ "$output" == *"No upgrade plans available"* ]]; then
+                  echo "no upgrade plans available"
+                  break
+              fi
+              # save the state prior to applying, allows us to come back to this point if necessary
+              git stash push -u -m "before-apply-plan-$(date +%s)"
+              # lets restore the state we just saved
+              git stash apply || true
+              # apply upgrade plan
+              /tmp/advisor upgrade-plan apply
+          done
+          # reset workspace before we reset state
+          git reset --hard HEAD
+          # remove untracked files, leaving the .advisor folder (contains the latest build-config)
+          git clean -fd -e .advisor
+          # Reset to state before last apply-plan so the final will redo and publish the pr
+          git stash pop || true
+          # get final build config
+          /tmp/advisor build-config get
+          # run the upgrade, create a branch to hold the change, commit the change in the branch, create a PR for the branch into main
+          /tmp/advisor upgrade-plan apply --push --token="$GIT_TOKEN_FOR_PRS"
+          # clean up
+          rm /tmp/advisor-linux.tar
+          rm /tmp/advisor
+      - name: Get errors if exist
+        if: always() && hashFiles('.advisor/errors/') != ''
+        run: |
+          cat .advisor/errors/*
