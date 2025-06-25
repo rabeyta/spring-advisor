@@ -66,7 +66,7 @@ jobs:
           # get final build config
           /tmp/advisor build-config get
           # run the upgrade, create a branch to hold the change, commit the change in the branch, create a PR for the branch into main
-          /tmp/advisor upgrade-plan apply --push --token="$GIT_TOKEN_FOR_PRS"
+          /tmp/advisor upgrade-plan apply --push --token="$GIT_TOKEN_FOR_PRS" --build-tool-run-cmd=spring-javaformat:apply
           # clean up
           rm /tmp/advisor-linux.tar
           rm /tmp/advisor
