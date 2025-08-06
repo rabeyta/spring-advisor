@@ -37,6 +37,10 @@ jobs:
           # update the build config (required for upgrade-plan)
           /tmp/advisor build-config get
           # run the upgrade, create a branch to hold the change, commit the change in the branch, create a PR for the branch into main
+          export SPRING_ADVISOR_MAPPING_CUSTOM_0_GIT_URI=https://github.com/rabeyta/saa-mappings.git
+          export SPRING_ADVISOR_MAPPING_CUSTOM_0_GIT_TOKEN=$GIT_TOKEN_FOR_PRS
+          export SPRING_ADVISOR_MAPPING_CUSTOM_0_GIT_PATH=.advisor/mappings/
+          export SPRING_ADVISOR_MAPPING_CUSTOM_0_GIT_BRANCH=main
           /tmp/advisor upgrade-plan apply --push --token=$GIT_TOKEN_FOR_PRS --build-tool-run-cmd=spring-javaformat:apply
           # clean up
           rm /tmp/advisor-linux.tar
